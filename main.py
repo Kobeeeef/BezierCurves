@@ -209,8 +209,8 @@ class PathPlanner:
 # Main function
 # ---------------------------
 def main():
-    pose2dStart = (1.21, 2.16, 0)
-    pose2dGoal = (16.32, 6.51, 0)
+    pose2dStart = (0, 8, 0)
+    pose2dGoal = (4, 1, 0)
     pixelsPerMeterX = GRID_SIZE[0] / fieldWidthMeters
     pixelsPerMeterY = GRID_SIZE[1] / fieldHeightMeters
     robotSizePixels = int(ROBOT_METERS * pixelsPerMeterX)
