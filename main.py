@@ -4,15 +4,28 @@ import numpy as np
 import heapq
 import cv2
 from scipy.special import comb
-import screeninfo
-import matplotlib.pyplot as plt
+
 bottomBoundary = 91
 topBoundary = 1437
 leftBoundary = 421
 rightBoundary = 3352
 
-GRID_SIZE = (rightBoundary - leftBoundary, topBoundary - bottomBoundary)
+fieldHeightMeters = 8.05
+fieldWidthMeters = 17.55
+ROBOT_METERS = 0.762
+SAFE_RADIUS_METERS = 0.05
 
+GRID_SIZE = (rightBoundary - leftBoundary, topBoundary - bottomBoundary)
+json_filename = "filled_pixels.json"
+static_obstacles = set()
+if os.path.exists(json_filename):
+    with open(json_filename, "r") as f:
+        try:
+            loaded_pixels = json.load(f)
+            static_obstacles = set(tuple(p) for p in loaded_pixels)
+            print(f"Loaded {len(static_obstacles)} pixels from {json_filename}")
+        except json.JSONDecodeError:
+            print("Error loading JSON file. Starting fresh.")
 
 # ---------------------------
 # Define the PathPlanner class
@@ -134,13 +147,11 @@ class PathPlanner:
             # Compute the curve for the current segment
             curve = self.bezier_curve(segment, num_points=100)
             if self.check_collision(curve):
-                # Attempt to inflate the current segment
                 inflated_segment = self.try_inflate_segment(segment, max_offset=200)
                 if inflated_segment is not None:
                     # Replace the current segment with the inflated version
                     # (you might decide to store both versions or mark them as adjusted)
                     segment = inflated_segment
-                    # Optionally, recompute the curve and verify collision again:
                     curve = self.bezier_curve(segment, num_points=100)
                     if self.check_collision(curve):
                         # Even the inflated version still collides, so we split.
@@ -186,96 +197,31 @@ class PathPlanner:
                     # If the candidate curve avoids obstacles, return this new control polygon.
                     return candidate_segment
         return None
-# ---------------------------
-# Global variable to store click coordinates
-# ---------------------------
-clicks = []
 
-
-def mouse_callback(event, x, y, flags, param):
-    global clicks
-    img = param['image']
-    if event == cv2.EVENT_LBUTTONDOWN:
-        clicks.append((x, y))
-        print("Clicked at:", (x, y))
-        cv2.circle(img, (x, y), 5, (0, 0, 255), -1)
-        cv2.imshow("Field", img)
 
 
 # ---------------------------
 # Main function
 # ---------------------------
 def main():
-    global clicks
-    field_img = cv2.imread("2025field.png")
-    if field_img is None:
-        print("Error: Could not load image '2025field.png'")
-        return
 
-    img_h, img_w = field_img.shape[:2]
-    if (img_w, img_h) != GRID_SIZE:
-        print("Resizing image to match grid size.")
-        field_img = cv2.resize(field_img, GRID_SIZE)
+    pose2dStart = (0, 0, 0)
+    pose2dGoal = (10, 10, 0)
+    pixelsPerMeterX = GRID_SIZE[0] / fieldWidthMeters
+    pixelsPerMeterY = GRID_SIZE[1] / fieldHeightMeters
 
-    img_display = field_img.copy()
-    cv2.namedWindow("Field", cv2.WINDOW_FREERATIO)
-    cv2.setMouseCallback("Field", mouse_callback, param={'image': img_display})
+    robotSizePixels = ROBOT_METERS * pixelsPerMeterX
 
-    print("Click on the image to set the START and then the GOAL point.")
-    while True:
-        cv2.imshow("Field", img_display)
-        key = cv2.waitKey(20) & 0xFF
-        if key == 27 or len(clicks) >= 2:
-            break
-    cv2.destroyWindow("Field")
-
-    if len(clicks) < 2:
-        print("Need two clicks (start and goal) to run path planning.")
-        return
-    clicks = [(725, 994), (2139, 318)]
-    start = (int(clicks[0][0]), int(clicks[0][1]))
-    goal = (int(clicks[1][0]), int(clicks[1][1]))
-    print("Start:", start, "Goal:", goal)
-
-    json_filename = "filled_pixels.json"
-    filled_pixels = set()
-
-    if os.path.exists(json_filename):
-        with open(json_filename, "r") as f:
-            try:
-                loaded_pixels = json.load(f)
-                filled_pixels = set(tuple(p) for p in loaded_pixels)
-                print(f"Loaded {len(filled_pixels)} pixels from {json_filename}")
-            except json.JSONDecodeError:
-                print("Error loading JSON file. Starting fresh.")
-
-    img_original = cv2.imread("2025field.png")
-    if img_original is None:
-        print("Error: Could not load image '2025field.png' for scaling obstacles.")
-        return
-    h_orig, w_orig = img_original.shape[:2]
+    planner = PathPlanner(GRID_SIZE, static_obstacles, safety_radius=robotSizePixels + (SAFE_RADIUS_METERS * pixelsPerMeterX))
 
 
-    screen = screeninfo.get_monitors()[0]
-    screen_w, screen_h = screen.width, screen.height
+    startPositionPixelsX = pose2dStart[0] * pixelsPerMeterX
+    startPositionPixelsY = pose2dStart[1] * pixelsPerMeterY
+    goalPositionPixelsX = pose2dGoal[0] * pixelsPerMeterX
+    goalPositionPixelsY = pose2dGoal[1] * pixelsPerMeterY
 
-    scale_w = screen_w / w_orig
-    scale_h = screen_h / h_orig
-    scale_extraction = min(scale_w, scale_h, 1.0)
-    new_w = int(w_orig * scale_extraction)
-    new_h = int(h_orig * scale_extraction)
-    print(f"Extraction image size: {new_w} x {new_h}")
 
-    grid_w, grid_h = GRID_SIZE
-    scale_x = grid_w / new_w
-    scale_y = grid_h / new_h
-    print(f"Scaling factors: scale_x = {scale_x}, scale_y = {scale_y}")
-    scaled_obstacles = {(int(x * scale_x), int(y * scale_y)) for (x, y) in filled_pixels}
-
-    RAW_OBSTACLES = scaled_obstacles
-    planner = PathPlanner(GRID_SIZE, RAW_OBSTACLES, safety_radius=200)
-
-    a_star_path = planner.a_star(start, goal)
+    a_star_path = planner.a_star((startPositionPixelsX, startPositionPixelsY), (goalPositionPixelsX, goalPositionPixelsY))
     if not a_star_path:
         print("No path found from start to goal.")
         return
@@ -283,41 +229,11 @@ def main():
     inflection_points = planner.find_inflection_points(a_star_path)
     control_points = planner.insert_midpoints(inflection_points)
     safe_paths = planner.generate_safe_bezier_paths(control_points)
-
-
-
-    fig, ax = plt.subplots(figsize=(10, 8))
-
-    field_img_rgb = cv2.cvtColor(field_img, cv2.COLOR_BGR2RGB)
-
-    ax.imshow(field_img_rgb, extent=[0, GRID_SIZE[0], GRID_SIZE[1], 0], origin='upper')
-    a_star_path_np = np.array(a_star_path)
-    ax.plot(a_star_path_np[:, 0], a_star_path_np[:, 1],
-            'c-', label="A* Path", linewidth=2)
-    for idx, segment in enumerate(safe_paths):
-
-        segment = np.array(segment)
-
-        curve = planner.bezier_curve(segment, num_points=100)
-
-        # ax.plot(curve[:, 0], curve[:, 1],
-        #         label=f"Segment {idx} Curve",
-        #         linewidth=2)
-
-
-        # ax.plot(segment[:, 0], segment[:, 1],
-        #         'r--',
-        #         label=f"Segment {idx} Control Polygon")
-
-    ax.set_title("Safe Bézier Curve Segments on Field Map")
-    ax.set_xlabel("X Coordinate")
-    ax.set_ylabel("Y Coordinate")
-    ax.legend(loc='best')
-    legend = ax.get_legend()
-    # if legend:
-    #     legend.remove()
-    plt.show()
-    cv2.destroyAllWindows()
+    scaled_safe_paths = [
+        (segment / np.array([pixelsPerMeterX, pixelsPerMeterY])).tolist()
+        for segment in safe_paths
+    ]
+    print(scaled_safe_paths)
 
 
 if __name__ == '__main__':
