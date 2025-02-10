@@ -40,7 +40,7 @@ class PathPlanner:
         for ox, oy in raw_obstacles:
             if 0 <= ox < grid_size[0] and 0 <= oy < grid_size[1]:
                 self.grid[ox, oy] = 1
-
+        print(f"Finished in {time.monotonic() - t:.2f} seconds.")
         self.obstacles = self.inflate_obstacles(self.grid, safety_radius)
         print(f"Finished in {time.monotonic() - t:.2f} seconds.")
 
@@ -209,8 +209,8 @@ class PathPlanner:
 # Main function
 # ---------------------------
 def main():
-    pose2dStart = (6.2, 4, 0)
-    pose2dGoal = (10, 8, 0)
+    pose2dStart = (1.21, 2.16, 0)
+    pose2dGoal = (16.32, 6.51, 0)
     pixelsPerMeterX = GRID_SIZE[0] / fieldWidthMeters
     pixelsPerMeterY = GRID_SIZE[1] / fieldHeightMeters
     robotSizePixels = int(ROBOT_METERS * pixelsPerMeterX)
