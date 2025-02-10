@@ -1,7 +1,7 @@
 # BezierCurves Path Planning With A* FRC 2025 Field
 
 
-## Normal A* Path (Manhattan DIstance)
+## Normal A* Path (Manhattan Distance)
 ![image](https://github.com/user-attachments/assets/39b32005-1f61-449d-904b-0ed5d9b4a355)
 
 ## Controlled Path
