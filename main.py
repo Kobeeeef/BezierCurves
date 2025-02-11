@@ -1,3 +1,7 @@
+import matplotlib.pyplot as plt
+
+
+
 import os
 import json
 import time
@@ -6,35 +10,15 @@ import numpy as np
 import heapq
 import cv2
 from scipy.special import comb
-import matplotlib.pyplot as plt
-
-# ---------------------------
-# Field and Grid Configuration
-# ---------------------------
-# These boundaries define the field region in the original image.
-bottomBoundary = 91       # lowest Y value in the original image
-topBoundary = 1437        # highest Y value in the original image
-leftBoundary = 421        # leftmost X value in the original image
-rightBoundary = 3352      # rightmost X value in the original image
-
 # Field dimensions in meters
 fieldHeightMeters = 8.05
 fieldWidthMeters = 17.55
 
-ROBOT_METERS = 0.762
-SAFE_RADIUS_INCHES = 1
-
-
-
-SAFE_RADIUS_METERS = SAFE_RADIUS_INCHES * 0.0254
-
-# The grid size is computed as the difference between the boundaries.
-GRID_SIZE = (rightBoundary - leftBoundary, topBoundary - bottomBoundary)
 
 # ---------------------------
 # Load Exported Obstacles
 # ---------------------------
-json_filename = "filled_pixels.json"
+json_filename = "static_obstacles.json"
 static_obstacles = set()
 if os.path.exists(json_filename):
     with open(json_filename, "r") as f:
@@ -77,7 +61,11 @@ class PathPlanner:
 
     def heuristic(self, a, b):
         """Using Manhattan (diagonal) distance as a heuristic."""
-        return abs(a[0] - b[0]) + abs(a[1] - b[1])
+        D = 1
+        D2 = 1.414
+        dx = abs(a[0] - b[0])
+        dy = abs(a[1] - b[1])
+        return D * (dx + dy) + (D2 - 2 * D) * min(dx, dy)
 
     def a_star(self, start, goal):
         """A* Pathfinding Algorithm.
@@ -186,7 +174,7 @@ class PathPlanner:
         # Return segments as numpy arrays (for plotting, etc.)
         return [np.array(seg) for seg in segments]
 
-    def try_inflate_segment(self, segment, max_offset_meters=0.5, step_meters=0.05):
+    def try_inflate_segment(self, segment, max_offset_meters=0.5, step_meters=0.1):
         """
         Attempt to modify (inflate) the segment by replacing the middle control point(s)
         with an offset point based on the endpoints, in order to bend the curve away from obstacles.
@@ -254,10 +242,19 @@ def draw_results(planner, a_star_path, safe_paths, control_points):
 # Main Function
 # ---------------------------
 def main():
-    # Define start and goal positions in meters (field-relative)
-    # Since (0, 0) is the bottom left of the field, pose2dStart = (0, 0) is at the bottom left.
-    pose2dStart = (2, 4, 0)
-    pose2dGoal = (7.4, 4, 0)
+    # ---------------------------
+    # Field and Grid Configuration
+    # ---------------------------
+
+
+    ROBOT_METERS = 0.762
+    SAFE_RADIUS_INCHES = 5
+    pose2dStart = (0, 0, 0)
+    pose2dGoal = (16, 8, 0)
+
+    # These boundaries define the field region in the original image, this can be anything but static obstacles must be relative to this resolution.
+    GRID_SIZE = (690, 316)
+    SAFE_RADIUS_METERS = SAFE_RADIUS_INCHES * 0.0254
     pixelsPerMeterX = GRID_SIZE[0] / fieldWidthMeters
     pixelsPerMeterY = GRID_SIZE[1] / fieldHeightMeters
     robotSizePixels = int(ROBOT_METERS * pixelsPerMeterX)

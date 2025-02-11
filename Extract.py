@@ -4,23 +4,35 @@ import json
 import os
 
 #############################################
-# Flood Fill with Bottom-Left Coordinates,
-# NO RESIZING -- uses full original resolution.
+# Flood Fill at a true 1000x500 resolution.
+# The image is physically resized to 1000x500.
+# Bottom-left coordinate (0,0).
 #############################################
 
-json_filename = "filled_pixels.json"  # Where to save your fill coordinates
+json_filename = "static_obstacles.json"  # Where to save your fill coordinates
 image_path = "2025game-field.jpg"     # Change to your path
 
-# Load full-resolution image
+# Load original image
 img_original = cv2.imread(image_path)
 if img_original is None:
     raise ValueError("Could not load image! Check file path.")
 
-# Dimensions of the original image
-h, w = img_original.shape[:2]
+# -- Resize to exactly 1000 x 500 ---
+target_w, target_h = 690, 316
+img_resized = cv2.resize(
+    img_original,
+    (target_w, target_h),
+    interpolation=cv2.INTER_AREA
+)
 
-# We'll use this for on-screen display (no resize)
-img = img_original.copy()
+# Now "img_resized" is physically 1000 pixels wide, 500 tall.
+h, w = img_resized.shape[:2]  # should be (500, 1000)
+
+# We'll use this for on-screen display AND for actual data
+img = img_resized.copy()
+
+# Create a named window (auto size or normal—your choice)
+cv2.namedWindow("Flood Fill (1000x500)", cv2.WINDOW_AUTOSIZE)
 
 # -------------------------------------------
 # Global Variables
@@ -46,8 +58,8 @@ if os.path.exists(json_filename):
 # -------------------------------------------
 def redraw_filled_pixels():
     global img
-    # Reset to original
-    img = img_original.copy()
+    # Reset to the resized original
+    img = img_resized.copy()
     for (lx, ly) in filled_pixels:
         # Convert bottom-left coords -> top-left coords
         col = lx
@@ -56,7 +68,7 @@ def redraw_filled_pixels():
             img[row, col] = (0, 255, 0)
 
 redraw_filled_pixels()
-cv2.imshow("Flood Fill (No Resize)", img)
+cv2.imshow("Flood Fill (1000x500)", img)
 
 # -------------------------------------------
 # Flood Fill Operation
@@ -70,9 +82,7 @@ def flood_fill(start_x, start_y):
     mask = np.zeros((h + 2, w + 2), dtype=np.uint8)
 
     loDiff = (10, 10, 10)
-    upDiff = (10, 10, 10)
     upDiff = (40, 40, 40)
-
     fill_color = (0, 255, 0)
 
     # Perform the flood fill
@@ -102,7 +112,7 @@ def flood_fill(start_x, start_y):
         history.append(new_pixels)
         filled_pixels.update(new_pixels)
         img = img_copy
-        cv2.imshow("Flood Fill (No Resize)", img)
+        cv2.imshow("Flood Fill (1000x500)", img)
         print(f"Flood filled. Total: {len(filled_pixels)}")
 
 # -------------------------------------------
@@ -116,7 +126,7 @@ def undo_last_fill():
     removed = history.pop()
     filled_pixels.difference_update(removed)
     redraw_filled_pixels()
-    cv2.imshow("Flood Fill (No Resize)", img)
+    cv2.imshow("Flood Fill (1000x500)", img)
 
 # -------------------------------------------
 # Mouse Callback
@@ -131,7 +141,7 @@ def mouse_callback(event, x, y, flags, param):
     elif event == cv2.EVENT_LBUTTONUP:
         is_drawing = False
 
-cv2.setMouseCallback("Flood Fill (No Resize)", mouse_callback)
+cv2.setMouseCallback("Flood Fill (1000x500)", mouse_callback)
 
 # -------------------------------------------
 # Main Loop
