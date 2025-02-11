@@ -38,7 +38,7 @@ class PathPlanner:
     def __init__(self, grid_size, raw_obstacles, safety_radius):
         self.grid_size = grid_size
         self.safety_radius = safety_radius
-
+        self.dynamic_obstacles = []
         # Compute the number of pixels per meter in X and Y for the field-relative grid.
         self.pixelsPerMeterX = grid_size[0] / fieldWidthMeters
         self.pixelsPerMeterY = grid_size[1] / fieldHeightMeters
@@ -53,6 +53,7 @@ class PathPlanner:
         print(f"Grid built in {time.monotonic() - t:.2f} seconds.")
         self.obstacles = self.inflate_obstacles(self.grid, safety_radius)
         print(f"Static obstacle inflation completed in {time.monotonic() - t:.2f} seconds.")
+
     def setSafetyRadius(self, new_safety_radius):
         if new_safety_radius == self.safety_radius:
             return
@@ -101,7 +102,8 @@ class PathPlanner:
                 neighbor = (current[0] + dx, current[1] + dy)
                 if (0 <= neighbor[0] < self.grid_size[0] and
                         0 <= neighbor[1] < self.grid_size[1] and
-                        neighbor not in self.obstacles):
+                        neighbor not in self.obstacles and
+                        neighbor not in self.dynamic_obstacles):
                     tentative_g_score = g_score[current] + 1
                     if neighbor not in g_score or tentative_g_score < g_score[neighbor]:
                         came_from[neighbor] = current
@@ -234,7 +236,19 @@ class PathPlanner:
                     return candidate_segment
         return None
 
+    def set_dynamic_obstacles(self, dynamic_obstacles, safety_radius):
+        """Update the grid with dynamic obstacles and apply inflation."""
+        pixelsPerMeterX = self.grid_size[0] / fieldWidthMeters
+        pixelsPerMeterY = self.grid_size[1] / fieldHeightMeters
 
+        dynamic_grid = np.zeros(self.grid_size, dtype=np.uint8)
+        for pose in dynamic_obstacles:
+            ox = int(pose[0] * pixelsPerMeterX)
+            oy = int(pose[1] * pixelsPerMeterY)
+            if 0 <= ox < self.grid_size[0] and 0 <= oy < self.grid_size[1]:
+                dynamic_grid[ox, oy] = 1
+
+        self.dynamic_obstacles = self.inflate_obstacles(dynamic_grid, safety_radius)
 
 
 def build_bezier_curves_proto(final_segments, times_to_traverse):
@@ -292,10 +306,6 @@ def main():
     safeDistancePixels = int(robotSizePixels + (SAFE_RADIUS_METERS * pixelsPerMeterX))
     planner = PathPlanner(GRID_SIZE, static_obstacles, safeDistancePixels)
 
-
-
-
-
     while True:
 
         message = socket.recv()
@@ -340,7 +350,6 @@ def main():
             continue
         response = build_bezier_curves_proto(curves, time_to_traverse)
         socket.send(response.SerializeToString(), zmq.DONTWAIT)
-
 
 
 if __name__ == '__main__':

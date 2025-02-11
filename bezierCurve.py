@@ -41,7 +41,7 @@ class PathPlanner:
         self.pixelsPerMeterY = grid_size[1] / fieldHeightMeters
         # Create a grid (using the same coordinate system as the exported obstacles).
         self.grid = np.zeros(grid_size, dtype=np.uint8)
-
+        self.dynamic_obstacles = []
         t = time.monotonic()
         # raw_obstacles are assumed to be in field-relative coordinates where (0, 0) is bottom left.
         for ox, oy in raw_obstacles:
@@ -92,7 +92,8 @@ class PathPlanner:
                 neighbor = (current[0] + dx, current[1] + dy)
                 if (0 <= neighbor[0] < self.grid_size[0] and
                         0 <= neighbor[1] < self.grid_size[1] and
-                        neighbor not in self.obstacles):
+                        neighbor not in self.obstacles and
+                    neighbor not in self.dynamic_obstacles):
                     tentative_g_score = g_score[current] + 1
                     if neighbor not in g_score or tentative_g_score < g_score[neighbor]:
                         came_from[neighbor] = current
@@ -201,6 +202,21 @@ class PathPlanner:
                 if not self.check_collision(candidate_curve):
                     return candidate_segment
         return None
+
+    def set_dynamic_obstacles(self, dynamic_obstacles, safety_radius):
+        """Update the grid with dynamic obstacles and apply inflation."""
+        pixelsPerMeterX = self.grid_size[0] / fieldWidthMeters
+        pixelsPerMeterY = self.grid_size[1] / fieldHeightMeters
+
+        dynamic_grid = np.zeros(self.grid_size, dtype=np.uint8)
+        for pose in dynamic_obstacles:
+            ox = int(pose[0] * pixelsPerMeterX)
+            oy = int(pose[1] * pixelsPerMeterY)
+            if 0 <= ox < self.grid_size[0] and 0 <= oy < self.grid_size[1]:
+                dynamic_grid[ox, oy] = 1
+
+        self.dynamic_obstacles = self.inflate_obstacles(dynamic_grid, safety_radius)
+
 
 # ---------------------------
 # Drawing Function
