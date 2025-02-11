@@ -6,43 +6,66 @@ import numpy as np
 import heapq
 import cv2
 from scipy.special import comb
-import screeninfo
 import matplotlib.pyplot as plt
-bottomBoundary = 91
-topBoundary = 1437
-leftBoundary = 421
-rightBoundary = 3352
+
+# ---------------------------
+# Field and Grid Configuration
+# ---------------------------
+# These boundaries define the field region in the original image.
+bottomBoundary = 91       # lowest Y value in the original image
+topBoundary = 1437        # highest Y value in the original image
+leftBoundary = 421        # leftmost X value in the original image
+rightBoundary = 3352      # rightmost X value in the original image
+
+# Field dimensions in meters
 fieldHeightMeters = 8.05
 fieldWidthMeters = 17.55
+
 ROBOT_METERS = 0.762
-SAFE_RADIUS_METERS = 0.05
+SAFE_RADIUS_INCHES = 1
+
+
+
+SAFE_RADIUS_METERS = SAFE_RADIUS_INCHES * 0.0254
+
+# The grid size is computed as the difference between the boundaries.
 GRID_SIZE = (rightBoundary - leftBoundary, topBoundary - bottomBoundary)
 
-json_filename = "static_obstacles_field.json"
+# ---------------------------
+# Load Exported Obstacles
+# ---------------------------
+json_filename = "filled_pixels.json"
 static_obstacles = set()
 if os.path.exists(json_filename):
     with open(json_filename, "r") as f:
         try:
             loaded_pixels = json.load(f)
+            # These obstacles should have been exported with Y flipped so that (0,0) is bottom left.
             static_obstacles = set(tuple(p) for p in loaded_pixels)
             print(f"Loaded {len(static_obstacles)} pixels from {json_filename}")
         except json.JSONDecodeError:
             print("Error loading JSON file. Starting fresh.")
 
 # ---------------------------
-# Define the PathPlanner class
+# Define the PathPlanner Class
 # ---------------------------
 class PathPlanner:
     def __init__(self, grid_size, raw_obstacles, safety_radius):
         self.grid_size = grid_size
+        # Compute the number of pixels per meter in X and Y for the field-relative grid.
+        self.pixelsPerMeterX = grid_size[0] / fieldWidthMeters
+        self.pixelsPerMeterY = grid_size[1] / fieldHeightMeters
+        # Create a grid (using the same coordinate system as the exported obstacles).
         self.grid = np.zeros(grid_size, dtype=np.uint8)
+
         t = time.monotonic()
+        # raw_obstacles are assumed to be in field-relative coordinates where (0, 0) is bottom left.
         for ox, oy in raw_obstacles:
             if 0 <= ox < grid_size[0] and 0 <= oy < grid_size[1]:
                 self.grid[ox, oy] = 1
-        print(f"Finished in {time.monotonic() - t:.2f} seconds.")
+        print(f"Grid built in {time.monotonic() - t:.2f} seconds.")
         self.obstacles = self.inflate_obstacles(self.grid, safety_radius)
-        print(f"Finished in {time.monotonic() - t:.2f} seconds.")
+        print(f"Static obstacle inflation completed in {time.monotonic() - t:.2f} seconds.")
 
     def inflate_obstacles(self, grid, radius):
         """Uses OpenCV to inflate obstacles with a circular kernel."""
@@ -56,15 +79,11 @@ class PathPlanner:
         """Using Manhattan (diagonal) distance as a heuristic."""
         return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
-        # D = 1
-        # D2 = 1.414
-        # dx = abs(a[0] - b[0])
-        # dy = abs(a[1] - b[1])
-        # return D * (dx + dy) + (D2 - 2 * D) * min(dx, dy)
-
     def a_star(self, start, goal):
-        """A* Pathfinding Algorithm."""
-        neighbors = [(0, 1), (1, 0), (0, -1), (-1, 0)]  # 4-way movement
+        """A* Pathfinding Algorithm.
+           (This algorithm works on the grid you provide, and since your grid is built
+            with (0,0) at the bottom left, (0,0) is indeed the bottom left.)"""
+        neighbors = [(0, 1), (1, 0), (0, -1), (-1, 0), (1, 1), (1, -1), (-1, 1), (-1, -1)]  # 4-way movement (up, right, down, left, and corners)
         open_set = []
         heapq.heappush(open_set, (0, start))
         came_from = {}
@@ -93,6 +112,7 @@ class PathPlanner:
                         f_score[neighbor] = tentative_g_score + self.heuristic(neighbor, goal)
                         heapq.heappush(open_set, (f_score[neighbor], neighbor))
         return []
+
     def find_inflection_points(self, path):
         """Extract inflection points from the path (where direction changes)."""
         if len(path) < 3:
@@ -151,19 +171,14 @@ class PathPlanner:
             curve = self.bezier_curve(segment, num_points=100)
             if self.check_collision(curve):
                 # Attempt to inflate the current segment
-                inflated_segment = self.try_inflate_segment(segment, max_offset=200)
+                inflated_segment = self.try_inflate_segment(segment)
                 if inflated_segment is not None:
-                    # Replace the current segment with the inflated version
-                    # (you might decide to store both versions or mark them as adjusted)
                     segment = inflated_segment
-                    # Optionally, recompute the curve and verify collision again:
                     curve = self.bezier_curve(segment, num_points=100)
                     if self.check_collision(curve):
-                        # Even the inflated version still collides, so we split.
                         segments.append(segment[:-1])
                         segment = [control_points[i - 1], control_points[i]]
                 else:
-                    # Inflation failed; split the segment as a fallback.
                     segments.append(segment[:-1])
                     segment = [control_points[i - 1], control_points[i]]
 
@@ -171,19 +186,17 @@ class PathPlanner:
         # Return segments as numpy arrays (for plotting, etc.)
         return [np.array(seg) for seg in segments]
 
-    def try_inflate_segment(self, segment, max_offset=100, step=5):
+    def try_inflate_segment(self, segment, max_offset_meters=0.5, step_meters=0.05):
         """
         Attempt to modify (inflate) the segment by replacing the middle control point(s)
         with an offset point based on the endpoints, in order to bend the curve away from obstacles.
         Returns a new control polygon (list of points) if a safe inflation is found,
         otherwise returns None.
-
-        For simplicity, this example uses just the first and last point of the segment to
-        create a quadratic Bézier candidate.
         """
-        # For inflation, we require at least two points (start and end)
         if len(segment) < 2:
             return None
+        max_offset_pixels = int(max_offset_meters * self.pixelsPerMeterX)
+        step_pixels = int(step_meters * self.pixelsPerMeterX)
 
         p0 = np.array(segment[0])
         p_end = np.array(segment[-1])
@@ -193,29 +206,64 @@ class PathPlanner:
             return None
         perp = np.array([-chord[1], chord[0]]) / chord_length
         for sign in [1, -1]:
-            for offset in np.arange(step, max_offset + step, step):
-                # Create a candidate mid control point by offsetting the chord's midpoint.
+            for offset in np.arange(step_pixels, max_offset_pixels + step_pixels, step_pixels):
                 mid = (p0 + p_end) / 2 + sign * perp * offset
                 candidate_segment = [segment[0], tuple(mid), segment[-1]]
                 candidate_curve = self.bezier_curve(candidate_segment, num_points=100)
                 if not self.check_collision(candidate_curve):
-                    # If the candidate curve avoids obstacles, return this new control polygon.
                     return candidate_segment
         return None
 
+# ---------------------------
+# Drawing Function
+# ---------------------------
+def draw_results(planner, a_star_path, safe_paths, control_points):
+    plt.figure(figsize=(12, 8))
 
+    obs = np.array(list(static_obstacles))
+
+    # If obs is empty, it might have shape (0,) => skip plotting
+    if obs.shape[0] > 0:
+        plt.scatter(obs[:, 0], obs[:, 1], c='black', s=1, label='Obstacles')
+
+    # Draw A* path in blue
+    # a_star_arr = np.array(a_star_path)
+    # plt.plot(a_star_arr[:, 0], a_star_arr[:, 1], 'b.-', label='A* Path')
+
+    # Draw each Bézier curve in red.
+    for i, seg in enumerate(safe_paths):
+        bezier_points = planner.bezier_curve(seg, num_points=100)
+        if i == 0:
+            plt.plot(bezier_points[:, 0], bezier_points[:, 1], 'r-', linewidth=2, label='Bézier Curve')
+        else:
+            plt.plot(bezier_points[:, 0], bezier_points[:, 1], 'r-', linewidth=2)
+
+    # Draw control points (green crosses)
+    # cp_arr = np.array(control_points)
+    # plt.scatter(cp_arr[:, 0], cp_arr[:, 1], c='green', marker='.', s=50, label='Control Points')
+
+    plt.title("Bézier Curves and Obstacles")
+    plt.xlabel("X (pixels)")
+    plt.ylabel("Y (pixels)")
+    plt.xlim(0, planner.grid_size[0])
+    plt.ylim(0, planner.grid_size[1])
+    plt.legend()
+    plt.show()
 
 # ---------------------------
-# Main function
+# Main Function
 # ---------------------------
 def main():
-    pose2dStart = (0, 8, 0)
-    pose2dGoal = (4, 1, 0)
+    # Define start and goal positions in meters (field-relative)
+    # Since (0, 0) is the bottom left of the field, pose2dStart = (0, 0) is at the bottom left.
+    pose2dStart = (4, 1, 0)
+    pose2dGoal = (12, 6, 0)
     pixelsPerMeterX = GRID_SIZE[0] / fieldWidthMeters
     pixelsPerMeterY = GRID_SIZE[1] / fieldHeightMeters
     robotSizePixels = int(ROBOT_METERS * pixelsPerMeterX)
     safeDistancePixels = int(robotSizePixels + (SAFE_RADIUS_METERS * pixelsPerMeterX))
 
+    # Convert start/goal positions from meters to pixels using our field-relative conversion.
     startPositionPixelsX = int(pose2dStart[0] * pixelsPerMeterX)
     startPositionPixelsY = int(pose2dStart[1] * pixelsPerMeterY)
     goalPositionPixelsX = int(pose2dGoal[0] * pixelsPerMeterX)
@@ -224,6 +272,8 @@ def main():
     print(f"GoalPositionPixels: {goalPositionPixelsX}, {goalPositionPixelsY}")
     print(f"SafeDistancePixels: {safeDistancePixels}")
     print(f"RobotSizePixels: {robotSizePixels}")
+
+    # Create the planner using the obstacles (which are assumed to be exported with (0,0) at bottom left)
     planner = PathPlanner(GRID_SIZE, static_obstacles, safety_radius=safeDistancePixels)
     print("Planning now.")
     t = time.monotonic()
@@ -239,14 +289,13 @@ def main():
     control_points = planner.insert_midpoints(inflection_points)
     safe_paths = planner.generate_safe_bezier_paths(control_points)
 
-    # The safe paths returned are in pixel coordinates.
-    # (The external conversion from pixels to meters remains as before.)
+    # For debugging: print the safe paths (in pixel coordinates)
     scaled_safe_paths = [
         (segment / np.array([pixelsPerMeterX, pixelsPerMeterY])).tolist()
         for segment in safe_paths
     ]
     print(scaled_safe_paths)
-
+    draw_results(planner, a_star_path, safe_paths, control_points)
 
 if __name__ == '__main__':
     main()
