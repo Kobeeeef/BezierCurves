@@ -81,8 +81,8 @@ def flood_fill(start_x, start_y):
     # For floodFill, we need a mask with a 1-pixel border
     mask = np.zeros((h + 2, w + 2), dtype=np.uint8)
 
-    loDiff = (10, 10, 10)
-    upDiff = (40, 40, 40)
+    loDiff = (5, 5, 5)
+    upDiff = (5, 5, 5)
     fill_color = (0, 255, 0)
 
     # Perform the flood fill

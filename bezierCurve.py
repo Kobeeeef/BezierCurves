@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
-import zmq
 
-import BezierCurve_pb2 as BezierCurve
+
+
 import os
 import json
 import time
@@ -10,10 +10,10 @@ import numpy as np
 import heapq
 import cv2
 from scipy.special import comb
-
 # Field dimensions in meters
 fieldHeightMeters = 8.05
 fieldWidthMeters = 17.55
+
 
 # ---------------------------
 # Load Exported Obstacles
@@ -30,15 +30,12 @@ if os.path.exists(json_filename):
         except json.JSONDecodeError:
             print("Error loading JSON file. Starting fresh.")
 
-
 # ---------------------------
 # Define the PathPlanner Class
 # ---------------------------
 class PathPlanner:
     def __init__(self, grid_size, raw_obstacles, safety_radius):
         self.grid_size = grid_size
-        self.safety_radius = safety_radius
-
         # Compute the number of pixels per meter in X and Y for the field-relative grid.
         self.pixelsPerMeterX = grid_size[0] / fieldWidthMeters
         self.pixelsPerMeterY = grid_size[1] / fieldHeightMeters
@@ -53,11 +50,6 @@ class PathPlanner:
         print(f"Grid built in {time.monotonic() - t:.2f} seconds.")
         self.obstacles = self.inflate_obstacles(self.grid, safety_radius)
         print(f"Static obstacle inflation completed in {time.monotonic() - t:.2f} seconds.")
-    def setSafetyRadius(self, new_safety_radius):
-        if new_safety_radius == self.safety_radius:
-            return
-        self.obstacles = self.inflate_obstacles(self.grid, new_safety_radius)
-        self.safety_radius = new_safety_radius
 
     def inflate_obstacles(self, grid, radius):
         """Uses OpenCV to inflate obstacles with a circular kernel."""
@@ -79,8 +71,7 @@ class PathPlanner:
         """A* Pathfinding Algorithm.
            (This algorithm works on the grid you provide, and since your grid is built
             with (0,0) at the bottom left, (0,0) is indeed the bottom left.)"""
-        neighbors = [(0, 1), (1, 0), (0, -1), (-1, 0), (1, 1), (1, -1), (-1, 1),
-                     (-1, -1)]  # 4-way movement (up, right, down, left, and corners)
+        neighbors = [(0, 1), (1, 0), (0, -1), (-1, 0), (1, 1), (1, -1), (-1, 1), (-1, -1)]  # 4-way movement (up, right, down, left, and corners)
         open_set = []
         heapq.heappush(open_set, (0, start))
         came_from = {}
@@ -153,24 +144,19 @@ class PathPlanner:
                 return True
         return False
 
-    def generate_safe_bezier_paths(self, control_points, speedMetersPerSecond):
+    def generate_safe_bezier_paths(self, control_points):
         """
         Build segments of Bézier curves from control_points. Instead of splitting immediately when
         a collision is detected, try to inflate the segment (i.e. create a larger curve) that avoids
         the obstacle. If inflation fails, then split the segment as before.
-
-        Returns:
-            final_segments (list of np.ndarray): Each element is a NumPy array of points (control points).
-            times_to_traverse (list of float): Each element corresponds to the time to traverse
-                                               the corresponding segment at the given speed.
         """
         segments = []
         segment = [control_points[0]]
 
         for i in range(1, len(control_points)):
             segment.append(control_points[i])
+            # Compute the curve for the current segment
             curve = self.bezier_curve(segment, num_points=100)
-
             if self.check_collision(curve):
                 # Attempt to inflate the current segment
                 inflated_segment = self.try_inflate_segment(segment)
@@ -184,27 +170,9 @@ class PathPlanner:
                     segments.append(segment[:-1])
                     segment = [control_points[i - 1], control_points[i]]
 
-        # Append the final segment
         segments.append(segment)
-
-        # Convert segments to NumPy arrays (for convenience/plotting)
-        final_segments = [np.array(seg) for seg in segments]
-
-        # Compute traversal time for each segment
-        times_to_traverse = []
-        for seg in segments:
-            # Sample the final Bézier curve for this segment
-            curve_points = self.bezier_curve(seg, num_points=100)
-
-            # Calculate Euclidean distance by summing lengths between consecutive points
-            total_distance = 0.0
-            for j in range(1, len(curve_points)):
-                total_distance += np.linalg.norm(curve_points[j] - curve_points[j - 1])
-
-            # Time = distance / speed
-            times_to_traverse.append(total_distance / speedMetersPerSecond)
-
-        return final_segments, times_to_traverse
+        # Return segments as numpy arrays (for plotting, etc.)
+        return [np.array(seg) for seg in segments]
 
     def try_inflate_segment(self, segment, max_offset_meters=0.5, step_meters=0.1):
         """
@@ -234,40 +202,41 @@ class PathPlanner:
                     return candidate_segment
         return None
 
+# ---------------------------
+# Drawing Function
+# ---------------------------
+def draw_results(planner, a_star_path, safe_paths, control_points):
+    plt.figure(figsize=(12, 8))
 
+    obs = np.array(list(static_obstacles))
 
+    # If obs is empty, it might have shape (0,) => skip plotting
+    if obs.shape[0] > 0:
+        plt.scatter(obs[:, 0], obs[:, 1], c='black', s=1, label='Obstacles')
 
-def build_bezier_curves_proto(final_segments, times_to_traverse):
-    """
-    Build a BezierCurves protobuf from the final path segments and their traversal times.
+    # Draw A* path in blue
+    # a_star_arr = np.array(a_star_path)
+    # plt.plot(a_star_arr[:, 0], a_star_arr[:, 1], 'b.-', label='A* Path')
 
-    Args:
-        final_segments (list of np.ndarray): Each element is a NumPy array of shape (N, 2),
-                                             containing [x, y] points for a segment.
-        times_to_traverse (list of float): Each element is the time (in seconds) required
-                                           to traverse the corresponding segment.
+    # Draw each Bézier curve in red.
+    for i, seg in enumerate(safe_paths):
+        bezier_points = planner.bezier_curve(seg, num_points=100)
+        if i == 0:
+            plt.plot(bezier_points[:, 0], bezier_points[:, 1], 'r-', linewidth=2, label='Bézier Curve')
+        else:
+            plt.plot(bezier_points[:, 0], bezier_points[:, 1], 'r-', linewidth=2)
 
-    Returns:
-        your_proto_pb2.BezierCurves: The populated protobuf message.
-    """
+    # Draw control points (green crosses)
+    # cp_arr = np.array(control_points)
+    # plt.scatter(cp_arr[:, 0], cp_arr[:, 1], c='green', marker='.', s=50, label='Control Points')
 
-    # Create the top-level BezierCurves message
-    bezier_curves_msg = BezierCurve.BezierCurves()
-    bezier_curves_msg.pathFound = True
-    # Iterate through segments and their times
-    for segment, time_traverse in zip(final_segments, times_to_traverse):
-        # Create a BezierCurve entry
-        curve_msg = bezier_curves_msg.curves.add()
-        curve_msg.timeToTraverse = time_traverse
-
-        # Fill in the control points for this curve
-        for (x_val, y_val) in segment:
-            cp = curve_msg.controlPoints.add()
-            cp.x = x_val
-            cp.y = y_val
-
-    return bezier_curves_msg
-
+    plt.title("Bézier Curves and Obstacles")
+    plt.xlabel("X (pixels)")
+    plt.ylabel("Y (pixels)")
+    plt.xlim(0, planner.grid_size[0])
+    plt.ylim(0, planner.grid_size[1])
+    plt.legend()
+    plt.show()
 
 # ---------------------------
 # Main Function
@@ -277,71 +246,47 @@ def main():
     # Field and Grid Configuration
     # ---------------------------
 
-    context = zmq.Context()
-    socket = context.socket(zmq.REP)
-    bind = "tcp://127.0.0.1:8531"
-    socket.bind(bind)
-    print("Server started on " + bind)
-    GRID_SIZE = (690, 316)
+
     ROBOT_METERS = 0.762
+    SAFE_RADIUS_INCHES = 5
+    pose2dStart = (0, 0)
+    pose2dGoal = (10.752464788732395, 6.244623655913979)
+
+    # These boundaries define the field region in the original image, this can be anything but static obstacles must be relative to this resolution.
+    GRID_SIZE = (690, 316)
+    SAFE_RADIUS_METERS = SAFE_RADIUS_INCHES * 0.0254
     pixelsPerMeterX = GRID_SIZE[0] / fieldWidthMeters
     pixelsPerMeterY = GRID_SIZE[1] / fieldHeightMeters
     robotSizePixels = int(ROBOT_METERS * pixelsPerMeterX)
-    defaultSafeInches = 5
-    SAFE_RADIUS_METERS = defaultSafeInches * 0.0254
     safeDistancePixels = int(robotSizePixels + (SAFE_RADIUS_METERS * pixelsPerMeterX))
-    planner = PathPlanner(GRID_SIZE, static_obstacles, safeDistancePixels)
 
+    # Convert start/goal positions from meters to pixels using our field-relative conversion.
+    startPositionPixelsX = int(pose2dStart[0] * pixelsPerMeterX)
+    startPositionPixelsY = int(pose2dStart[1] * pixelsPerMeterY)
+    goalPositionPixelsX = int(pose2dGoal[0] * pixelsPerMeterX)
+    goalPositionPixelsY = int(pose2dGoal[1] * pixelsPerMeterY)
 
+    # Create the planner using the obstacles (which are assumed to be exported with (0,0) at bottom left)
+    planner = PathPlanner(GRID_SIZE, static_obstacles, safety_radius=safeDistancePixels)
+    t = time.monotonic()
+    a_star_path = planner.a_star((startPositionPixelsX, startPositionPixelsY),
+                                 (goalPositionPixelsX, goalPositionPixelsY))
+    print(f"Path planning time: {time.monotonic() - t}")
+    if not a_star_path:
+        print("No path found from start to goal.")
+        return
 
+    print("Path found, now solving Bézier curve...")
+    inflection_points = planner.find_inflection_points(a_star_path)
+    control_points = planner.insert_midpoints(inflection_points)
+    safe_paths = planner.generate_safe_bezier_paths(inflection_points)
 
-
-    while True:
-
-        message = socket.recv()
-        request = BezierCurve.PlanBezierPathRequest.FromString(message)
-        pose2dStart = (request.start.x, request.start.y)
-        pose2dGoal = (request.goal.x, request.goal.y)
-        print(pose2dStart)
-        print(pose2dGoal)
-
-        safeInches = request.safeRadiusInches
-        speedMetersPerSecond = request.metersPerSecond
-        # path planning
-        SAFE_RADIUS_METERS = safeInches * 0.0254
-        safeDistancePixels = int(robotSizePixels + (SAFE_RADIUS_METERS * pixelsPerMeterX))
-        startPositionPixelsX = int(pose2dStart[0] * pixelsPerMeterX)
-        startPositionPixelsY = int(pose2dStart[1] * pixelsPerMeterY)
-        goalPositionPixelsX = int(pose2dGoal[0] * pixelsPerMeterX)
-        goalPositionPixelsY = int(pose2dGoal[1] * pixelsPerMeterY)
-        t = time.monotonic()
-        a_star_path = planner.a_star((startPositionPixelsX, startPositionPixelsY),
-                                     (goalPositionPixelsX, goalPositionPixelsY))
-        print(f"Path planning time: {time.monotonic() - t}")
-        if not a_star_path:
-            print("No path found from start to goal.")
-            curves, time_to_traverse = None, None
-        else:
-            print("Path found, now solving Bézier curve...")
-            inflection_points = planner.find_inflection_points(a_star_path)
-            # control_points = planner.insert_midpoints(inflection_points)
-            safe_paths, time_to_traverse = planner.generate_safe_bezier_paths(inflection_points, speedMetersPerSecond)
-
-            curves = [
-                (segment / np.array([pixelsPerMeterX, pixelsPerMeterY])).tolist()
-                for segment in safe_paths
-            ]
-        # path planning
-
-        if curves is None or time_to_traverse is None:
-            bezier_curves_msg = BezierCurve.BezierCurves()
-            bezier_curves_msg.pathFound = False
-            socket.send(bezier_curves_msg.SerializeToString(), zmq.DONTWAIT)
-            continue
-        response = build_bezier_curves_proto(curves, time_to_traverse)
-        socket.send(response.SerializeToString(), zmq.DONTWAIT)
-
-
+    scaled_safe_paths = [
+        (segment / np.array([pixelsPerMeterX, pixelsPerMeterY])).tolist()
+        for segment in safe_paths
+    ]
+    print(scaled_safe_paths)
+    draw_results(planner, a_star_path, safe_paths, control_points)
 
 if __name__ == '__main__':
     main()
