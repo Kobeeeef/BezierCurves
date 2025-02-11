@@ -256,8 +256,8 @@ def draw_results(planner, a_star_path, safe_paths, control_points):
 def main():
     # Define start and goal positions in meters (field-relative)
     # Since (0, 0) is the bottom left of the field, pose2dStart = (0, 0) is at the bottom left.
-    pose2dStart = (4, 1, 0)
-    pose2dGoal = (12, 6, 0)
+    pose2dStart = (2, 4, 0)
+    pose2dGoal = (7.4, 4, 0)
     pixelsPerMeterX = GRID_SIZE[0] / fieldWidthMeters
     pixelsPerMeterY = GRID_SIZE[1] / fieldHeightMeters
     robotSizePixels = int(ROBOT_METERS * pixelsPerMeterX)
@@ -287,7 +287,7 @@ def main():
     print("Path found, now solving Bézier curve...")
     inflection_points = planner.find_inflection_points(a_star_path)
     control_points = planner.insert_midpoints(inflection_points)
-    safe_paths = planner.generate_safe_bezier_paths(control_points)
+    safe_paths = planner.generate_safe_bezier_paths(inflection_points)
 
     # For debugging: print the safe paths (in pixel coordinates)
     scaled_safe_paths = [
