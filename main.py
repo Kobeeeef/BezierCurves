@@ -314,12 +314,12 @@ def main():
         pose2dGoal = (request.goal.x, request.goal.y)
         print(pose2dStart)
         print(pose2dGoal)
-
         safeInches = request.safeRadiusInches
         speedMetersPerSecond = request.metersPerSecond
         # path planning
         SAFE_RADIUS_METERS = safeInches * 0.0254
         safeDistancePixels = int(robotSizePixels + (SAFE_RADIUS_METERS * pixelsPerMeterX))
+        planner.setSafetyRadius(safeDistancePixels)
         startPositionPixelsX = int(pose2dStart[0] * pixelsPerMeterX)
         startPositionPixelsY = int(pose2dStart[1] * pixelsPerMeterY)
         goalPositionPixelsX = int(pose2dGoal[0] * pixelsPerMeterX)
@@ -349,6 +349,7 @@ def main():
             socket.send(bezier_curves_msg.SerializeToString(), zmq.DONTWAIT)
             continue
         response = build_bezier_curves_proto(curves, time_to_traverse)
+        print(response)
         socket.send(response.SerializeToString(), zmq.DONTWAIT)
 
 

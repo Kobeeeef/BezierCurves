@@ -14,19 +14,19 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x18protos/BezierCurve.proto\"$\n\x0c\x43ontrolPoint\x12\t\n\x01x\x18\x01 \x01(\x01\x12\t\n\x01y\x18\x02 \x01(\x01\"K\n\x0b\x42\x65zierCurve\x12\x16\n\x0etimeToTraverse\x18\x01 \x01(\x01\x12$\n\rcontrolPoints\x18\x02 \x03(\x0b\x32\r.ControlPoint\"?\n\x0c\x42\x65zierCurves\x12\x1c\n\x06\x63urves\x18\x01 \x03(\x0b\x32\x0c.BezierCurve\x12\x11\n\tpathFound\x18\x02 \x01(\x08\"\x85\x01\n\x15PlanBezierPathRequest\x12\x1c\n\x05start\x18\x01 \x01(\x0b\x32\r.ControlPoint\x12\x1b\n\x04goal\x18\x02 \x01(\x0b\x32\r.ControlPoint\x12\x18\n\x10safeRadiusInches\x18\x03 \x01(\x01\x12\x17\n\x0fmetersPerSecond\x18\x04 \x01(\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x18protos/BezierCurve.proto\x12$org.kobe.xbot.xdashbackend.utilities\"$\n\x0c\x43ontrolPoint\x12\t\n\x01x\x18\x01 \x01(\x01\x12\t\n\x01y\x18\x02 \x01(\x01\"p\n\x0b\x42\x65zierCurve\x12\x16\n\x0etimeToTraverse\x18\x01 \x01(\x01\x12I\n\rcontrolPoints\x18\x02 \x03(\x0b\x32\x32.org.kobe.xbot.xdashbackend.utilities.ControlPoint\"\x96\x01\n\x0c\x42\x65zierCurves\x12\x41\n\x06\x63urves\x18\x01 \x03(\x0b\x32\x31.org.kobe.xbot.xdashbackend.utilities.BezierCurve\x12\x11\n\tpathFound\x18\x02 \x01(\x08\x12\x1c\n\x0fmetersPerSecond\x18\x03 \x01(\x01H\x00\x88\x01\x01\x42\x12\n\x10_metersPerSecond\"\xcf\x01\n\x15PlanBezierPathRequest\x12\x41\n\x05start\x18\x01 \x01(\x0b\x32\x32.org.kobe.xbot.xdashbackend.utilities.ControlPoint\x12@\n\x04goal\x18\x02 \x01(\x0b\x32\x32.org.kobe.xbot.xdashbackend.utilities.ControlPoint\x12\x18\n\x10safeRadiusInches\x18\x03 \x01(\x01\x12\x17\n\x0fmetersPerSecond\x18\x04 \x01(\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'protos.BezierCurve_pb2', _globals)
 if _descriptor._USE_C_DESCRIPTORS == False:
   DESCRIPTOR._options = None
-  _globals['_CONTROLPOINT']._serialized_start=28
-  _globals['_CONTROLPOINT']._serialized_end=64
-  _globals['_BEZIERCURVE']._serialized_start=66
-  _globals['_BEZIERCURVE']._serialized_end=141
-  _globals['_BEZIERCURVES']._serialized_start=143
-  _globals['_BEZIERCURVES']._serialized_end=206
-  _globals['_PLANBEZIERPATHREQUEST']._serialized_start=209
-  _globals['_PLANBEZIERPATHREQUEST']._serialized_end=342
+  _globals['_CONTROLPOINT']._serialized_start=66
+  _globals['_CONTROLPOINT']._serialized_end=102
+  _globals['_BEZIERCURVE']._serialized_start=104
+  _globals['_BEZIERCURVE']._serialized_end=216
+  _globals['_BEZIERCURVES']._serialized_start=219
+  _globals['_BEZIERCURVES']._serialized_end=369
+  _globals['_PLANBEZIERPATHREQUEST']._serialized_start=372
+  _globals['_PLANBEZIERPATHREQUEST']._serialized_end=579
 # @@protoc_insertion_point(module_scope)
