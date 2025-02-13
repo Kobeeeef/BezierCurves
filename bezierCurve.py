@@ -228,34 +228,6 @@ class PathPlanner:
                 dynamic_grid[ox, oy] = 1
 
         self.dynamic_obstacles = self.inflate_obstacles(dynamic_grid, safety_radius)
-
-
-# ---------------------------
-# Drawing Function (Single Curve)
-# ---------------------------
-def draw_results_single(planner, bezier_curve, control_points):
-    plt.figure(figsize=(12, 8))
-
-    # obs = np.array(list(planner.obstacles))
-    # if obs.shape[0] > 0:
-    #     plt.scatter(obs[:, 0], obs[:, 1], c='black', s=1, label='Obstacles')
-
-    # Plot the single Bézier curve in red.
-    plt.plot(bezier_curve[:, 0], bezier_curve[:, 1], 'r-', linewidth=2, label='Single Bézier Curve')
-
-    # # Plot the control points as green crosses.
-    # cp_arr = np.array(control_points)
-    # plt.scatter(cp_arr[:, 0], cp_arr[:, 1], c='green', marker='x', s=50, label='Control Points')
-
-    plt.title("Single Bézier Curve with Inflation and Obstacles")
-    plt.xlabel("X (pixels)")
-    plt.ylabel("Y (pixels)")
-    plt.xlim(0, planner.grid_size[0])
-    plt.ylim(0, planner.grid_size[1])
-    plt.legend()
-    plt.show()
-
-
 # ---------------------------
 # Main Function
 # ---------------------------
@@ -318,8 +290,14 @@ def main():
             bezier_curves_msg = BezierCurve.BezierCurve()
             socket.send(bezier_curves_msg.SerializeToString(), zmq.DONTWAIT)
             continue
-
-        socket.send(response.SerializeToString(), zmq.DONTWAIT)
+        bezier_curves_msg = BezierCurve.BezierCurve()
+        for (x_val, y_val) in final_control_points_meters:
+            cp = bezier_curves_msg.controlPoints.add()
+            cp.x = x_val
+            cp.y = y_val
+        #Solve this in seconds based on bezier curve length and speed meters per second
+        bezier_curves_msg.timeToTraverse = 1.5
+        socket.send(bezier_curves_msg.SerializeToString(), zmq.DONTWAIT)
 
 
 
