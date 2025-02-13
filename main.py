@@ -18,7 +18,7 @@ fieldWidthMeters = 17.55
 # ---------------------------
 # Load Exported Obstacles
 # ---------------------------
-json_filename = "static_obstacles.json"
+json_filename = "static_obstacles_wall.json"
 static_obstacles = set()
 if os.path.exists(json_filename):
     with open(json_filename, "r") as f:
@@ -334,7 +334,7 @@ def main():
         else:
             print("Path found, now solving Bézier curve...")
             inflection_points = planner.find_inflection_points(a_star_path)
-            # control_points = planner.insert_midpoints(inflection_points)
+            control_points = planner.insert_midpoints(inflection_points)
             safe_paths, time_to_traverse = planner.generate_safe_bezier_paths(inflection_points, speedMetersPerSecond)
 
             curves = [
