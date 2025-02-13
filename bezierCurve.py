@@ -228,15 +228,30 @@ class PathPlanner:
                 dynamic_grid[ox, oy] = 1
 
         self.dynamic_obstacles = self.inflate_obstacles(dynamic_grid, safety_radius)
+
+
+# ---------------------------
+# Drawing Function (Single Curve)
+# ---------------------------
+def draw_results_single(planner, bezier_curve, control_points):
+    plt.figure(figsize=(12, 8))
+    plt.plot(bezier_curve[:, 0], bezier_curve[:, 1], 'r-', linewidth=2, label='Single Bézier Curve')
+    plt.title("Single Bézier Curve with Inflation and Obstacles")
+    plt.xlabel("X (pixels)")
+    plt.ylabel("Y (pixels)")
+    plt.xlim(0, planner.grid_size[0])
+    plt.ylim(0, planner.grid_size[1])
+    plt.legend()
+    plt.show()
+
+
 # ---------------------------
 # Main Function
 # ---------------------------
-
 def main():
     # ---------------------------
     # Field and Grid Configuration
     # ---------------------------
-
     context = zmq.Context()
     socket = context.socket(zmq.REP)
     bind = "tcp://127.0.0.1:8531"
@@ -253,7 +268,6 @@ def main():
     planner = PathPlanner(GRID_SIZE, static_obstacles, safeDistancePixels)
 
     while True:
-
         message = socket.recv()
         request = BezierCurve.PlanBezierPathRequest.FromString(message)
         pose2dStart = (request.start.x, request.start.y)
@@ -262,23 +276,28 @@ def main():
         print(pose2dGoal)
         safeInches = request.safeRadiusInches
         speedMetersPerSecond = request.metersPerSecond
-        # path planning
+
+        # Update safety parameters
         SAFE_RADIUS_METERS = safeInches * 0.0254
         safeDistancePixels = int(robotSizePixels + (SAFE_RADIUS_METERS * pixelsPerMeterX))
         planner.setSafetyRadius(safeDistancePixels)
+
+        # Convert start and goal from meters to pixels.
         startPositionPixelsX = int(pose2dStart[0] * pixelsPerMeterX)
         startPositionPixelsY = int(pose2dStart[1] * pixelsPerMeterY)
         goalPositionPixelsX = int(pose2dGoal[0] * pixelsPerMeterX)
         goalPositionPixelsY = int(pose2dGoal[1] * pixelsPerMeterY)
+
         t = time.monotonic()
         a_star_path = planner.a_star((startPositionPixelsX, startPositionPixelsY),
                                      (goalPositionPixelsX, goalPositionPixelsY))
         print(f"Path planning time: {time.monotonic() - t:.2f} seconds.")
+
         if not a_star_path:
             print("No path found from start to goal.")
             final_control_points_meters = None
+            single_curve = None
         else:
-            print("Path found, now solving Bézier curve...")
             print("Path found, now generating a single Bézier curve with inflation if needed...")
             inflection_points = planner.find_inflection_points(a_star_path)
             control_points = np.array(inflection_points)
@@ -286,19 +305,28 @@ def main():
             conversion_factors = np.array([planner.pixelsPerMeterX, planner.pixelsPerMeterY])
             final_control_points_meters = final_control_points / conversion_factors
 
-        if final_control_points_meters is None:
-            bezier_curves_msg = BezierCurve.BezierCurve()
-            socket.send(bezier_curves_msg.SerializeToString(), zmq.DONTWAIT)
-            continue
         bezier_curves_msg = BezierCurve.BezierCurve()
-        for (x_val, y_val) in final_control_points_meters:
-            cp = bezier_curves_msg.controlPoints.add()
-            cp.x = x_val
-            cp.y = y_val
-        #Solve this in seconds based on bezier curve length and speed meters per second
-        bezier_curves_msg.timeToTraverse = 1.5
-        socket.send(bezier_curves_msg.SerializeToString(), zmq.DONTWAIT)
+        if final_control_points_meters is not None and single_curve is not None:
+            for (x_val, y_val) in final_control_points_meters:
+                cp = bezier_curves_msg.controlPoints.add()
+                cp.x = x_val
+                cp.y = y_val
 
+            # Convert the full Bézier curve from pixels to meters.
+            single_curve_meters = single_curve / conversion_factors
+            # Compute the curve length as the sum of Euclidean distances between consecutive points.
+            distances = np.linalg.norm(np.diff(single_curve_meters, axis=0), axis=1)
+            total_length = np.sum(distances)
+            # Calculate time to traverse given the speed (meters per second).
+            timeToTraverse = total_length / speedMetersPerSecond
+            bezier_curves_msg.timeToTraverse = timeToTraverse
+            print(f"Total curve length (meters): {total_length:.2f}")
+            print(f"Time to traverse (seconds): {timeToTraverse:.2f}")
+        else:
+            # No valid path found.
+            bezier_curves_msg.timeToTraverse = -1.0
+
+        socket.send(bezier_curves_msg.SerializeToString(), zmq.DONTWAIT)
 
 
 if __name__ == '__main__':
