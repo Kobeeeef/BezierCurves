@@ -258,7 +258,7 @@ def main():
     socket.bind(bind)
     print("Server started on " + bind)
     GRID_SIZE = (690, 316)
-    ROBOT_METERS = 0.762
+    ROBOT_METERS = 0.9525
     pixelsPerMeterX = GRID_SIZE[0] / fieldWidthMeters
     pixelsPerMeterY = GRID_SIZE[1] / fieldHeightMeters
     robotSizePixels = int(ROBOT_METERS * pixelsPerMeterX)
