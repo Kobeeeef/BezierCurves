@@ -193,7 +193,7 @@ class PathPlanner:
                 new_points[j] = candidate[1]
         return new_points
 
-    def generate_single_bezier_path(self, control_points, num_points=200, max_attempts=5):
+    def generate_single_bezier_path(self, control_points, num_points=200, max_attempts=10):
         """
         Compute a single Bézier curve from all provided control points.
         If the resulting curve collides with obstacles, attempt to adjust (inflate)

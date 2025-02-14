@@ -9,7 +9,7 @@ import os
 # Bottom-left coordinate (0,0).
 #############################################
 
-json_filename = "static_obstacles_wall.json"  # Where to save your fill coordinates
+json_filename = "static_obstacles.json"  # Where to save your fill coordinates
 image_path = "2025game-field.jpg"     # Change to your path
 
 # Load original image
