@@ -95,7 +95,7 @@ class FastMarchingPathfinder:
             x, y = int(round(pt[0])), int(round(pt[1]))
             if x < 0 or x >= self.width or y < 0 or y >= self.height:
                 continue
-            if self.grid_cost[y, x] >= 100000:
+            if self.grid_cost[y, x] >= 2:
                 return True
         return False
 
@@ -295,14 +295,14 @@ if __name__ == '__main__':
     # Load static obstacles from file
     static_obs_array = get_static_obstacles("static_obstacles_cm.json")
     # Define dynamic obstacles: each tuple is (X, Y, HEAT, SIZE)
-    dynamic_obs_array = [(900, 260, 40000, 5)]
+    dynamic_obs_array = [(800, 150, 40000, 100)]
 
     # Apply both static and dynamic obstacles (with inflation)
     combined_grid = apply_and_inflate_all_obstacles(base_grid.copy(), static_obs_array, dynamic_obs_array, TOTAL_SAFE_DISTANCE)
 
     pathfinder = FastMarchingPathfinder(combined_grid)
-    start = (200, 400)
-    goal = (750, 400)
+    start = (0, 0)
+    goal = (1600, 400)
     print("Computing pathfinder...")
     t = time.time()
     time_map = pathfinder.compute_time_map(goal)
@@ -330,9 +330,7 @@ if __name__ == '__main__':
 
     # Generate safe, smooth Bézier segments from the inflection points
     safe_bezier_segments = pathfinder.generate_safe_bezier_paths(inflection_points)
-    print("Generated safe Bézier segments:")
-    for seg in safe_bezier_segments:
-        print(seg)
+
 
     # Visualize everything together: obstacle heatmap, discrete path, inflection points, and safe Bézier curves.
     visualize(combined_grid, time_map, path, start, goal,
