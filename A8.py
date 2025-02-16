@@ -302,7 +302,7 @@ if __name__ == '__main__':
 
     pathfinder = FastMarchingPathfinder(combined_grid)
     start = (0, 400)
-    goal = (250, 400)
+    goal = (1150, 400)
     print("Computing pathfinder...")
     t = time.time()
     time_map = pathfinder.compute_time_map(goal)
