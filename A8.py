@@ -99,7 +99,7 @@ class FastMarchingPathfinder:
                 return True
         return False
 
-    def try_inflate_segment(self, segment, max_offset_pixels=25, step_pixels=5):
+    def try_inflate_segment(self, segment, max_offset_pixels=300, step_pixels=40):
         """
         Attempt to modify (inflate) the segment by replacing the middle control point(s)
         with an offset point (based on the endpoints) to bend the curve away from obstacles.
@@ -139,8 +139,8 @@ class FastMarchingPathfinder:
         for i in range(1, len(control_points)):
             segment.append(control_points[i])
             curve = self.bezier_curve(segment, num_points=100)
-
             if self.check_collision(curve):
+                print("COLLISION DETECTED INFLATING")
                 # Attempt to inflate the current segment
                 inflated_segment = self.try_inflate_segment(segment)
                 if inflated_segment is not None:
@@ -295,14 +295,14 @@ if __name__ == '__main__':
     # Load static obstacles from file
     static_obs_array = get_static_obstacles("static_obstacles_cm.json")
     # Define dynamic obstacles: each tuple is (X, Y, HEAT, SIZE)
-    dynamic_obs_array = [(800, 150, 40000, 1)]
+    dynamic_obs_array = [(1100, 600, 40000, 89)]
 
     # Apply both static and dynamic obstacles (with inflation)
     combined_grid = apply_and_inflate_all_obstacles(base_grid.copy(), static_obs_array, dynamic_obs_array, TOTAL_SAFE_DISTANCE)
 
     pathfinder = FastMarchingPathfinder(combined_grid)
     start = (0, 400)
-    goal = (1150, 400)
+    goal = (1650, 600)
     print("Computing pathfinder...")
     t = time.time()
     time_map = pathfinder.compute_time_map(goal)
