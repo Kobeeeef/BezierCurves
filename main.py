@@ -18,7 +18,7 @@ fieldWidthMeters = 17.55
 # ---------------------------
 # Load Exported Obstacles
 # ---------------------------
-json_filename = "static_obstacles_wall.json"
+json_filename = "static_obstacles.json"
 static_obstacles = set()
 if os.path.exists(json_filename):
     with open(json_filename, "r") as f:
@@ -297,7 +297,7 @@ def main():
     socket.bind(bind)
     print("Server started on " + bind)
     GRID_SIZE = (690, 316)
-    ROBOT_METERS = 0.762
+    ROBOT_METERS = 1.1938
     pixelsPerMeterX = GRID_SIZE[0] / fieldWidthMeters
     pixelsPerMeterY = GRID_SIZE[1] / fieldHeightMeters
     robotSizePixels = int(ROBOT_METERS * pixelsPerMeterX)
@@ -330,27 +330,30 @@ def main():
         print(f"Path planning time: {time.monotonic() - t}")
         if not a_star_path:
             print("No path found from start to goal.")
-            curves, time_to_traverse = None, None
+            curves, times_to_traverse = None, None
         else:
             print("Path found, now solving Bézier curve...")
+            # inflection_points = planner.find_inflection_points(a_star_path)
+
             inflection_points = planner.find_inflection_points(a_star_path)
             control_points = planner.insert_midpoints(inflection_points)
-            safe_paths, time_to_traverse = planner.generate_safe_bezier_paths(inflection_points, speedMetersPerSecond)
+            safe_paths, times_to_traverse = planner.generate_safe_bezier_paths(inflection_points, speedMetersPerSecond)
 
             curves = [
                 (segment / np.array([pixelsPerMeterX, pixelsPerMeterY])).tolist()
                 for segment in safe_paths
             ]
+
         # path planning
 
-        if curves is None or time_to_traverse is None:
+        if curves is None or times_to_traverse is None:
             bezier_curves_msg = BezierCurve.BezierCurves()
             bezier_curves_msg.pathFound = False
             socket.send(bezier_curves_msg.SerializeToString(), zmq.DONTWAIT)
             continue
-        response = build_bezier_curves_proto(curves, time_to_traverse)
-        print(response)
+        response = build_bezier_curves_proto(curves, times_to_traverse)
         socket.send(response.SerializeToString(), zmq.DONTWAIT)
+        print(response)
 
 
 if __name__ == '__main__':
