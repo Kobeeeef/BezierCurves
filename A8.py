@@ -301,8 +301,8 @@ if __name__ == '__main__':
     combined_grid = apply_and_inflate_all_obstacles(base_grid.copy(), static_obs_array, dynamic_obs_array, TOTAL_SAFE_DISTANCE)
 
     pathfinder = FastMarchingPathfinder(combined_grid)
-    start = (0, 0)
-    goal = (1600, 700)
+    start = (0, 400)
+    goal = (250, 400)
     print("Computing pathfinder...")
     t = time.time()
     time_map = pathfinder.compute_time_map(goal)
