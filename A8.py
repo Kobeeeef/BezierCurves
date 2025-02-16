@@ -49,8 +49,8 @@ class FastMarchingPathfinder:
     def bezier_curve(self, control_points, num_points=100):
         """
         Generate a Bézier curve from a list of control points.
-        For 2, 3, or 4 points, use the standard linear/quadratic/cubic formulas.
-        For more than 4 control points, use the de Casteljau algorithm.
+        For 2, 3, 4, or 5 points, use the standard linear/quadratic/cubic/quartic formulas.
+        For more than 5 control points, use the de Casteljau algorithm.
         """
         # Ensure all control points are NumPy arrays (floats)
         control_points = [np.array(pt, dtype=float) for pt in control_points]
@@ -73,8 +73,16 @@ class FastMarchingPathfinder:
                      np.outer(3 * t_values * (1 - t_values) ** 2, p1) +
                      np.outer(3 * t_values ** 2 * (1 - t_values), p2) +
                      np.outer(t_values ** 3, p3))
+        elif n == 5:
+            # Quartic Bézier (5 control points)
+            p0, p1, p2, p3, p4 = control_points
+            curve = (np.outer((1 - t_values) ** 4, p0) +
+                     np.outer(4 * t_values * (1 - t_values) ** 3, p1) +
+                     np.outer(6 * t_values ** 2 * (1 - t_values) ** 2, p2) +
+                     np.outer(4 * t_values ** 3 * (1 - t_values), p3) +
+                     np.outer(t_values ** 4, p4))
         else:
-            # For any number > 4, use the de Casteljau algorithm.
+            # For any number > 5, use the de Casteljau algorithm.
             curve_points = []
             for tt in t_values:
                 pts = control_points.copy()
@@ -87,24 +95,16 @@ class FastMarchingPathfinder:
         return curve
 
     def check_collision(self, curve):
-        """
-        Check whether any point in the curve collides with an obstacle.
-        We assume a collision if the grid cost at that point is above a threshold (here, 100000).
-        """
-        for pt in curve:
-            x, y = int(round(pt[0])), int(round(pt[1]))
-            if x < 0 or x >= self.width or y < 0 or y >= self.height:
-                continue
-            if self.grid_cost[y, x] >= 2:
-                return True
-        return False
+        # Convert curve points to indices
+        xs = np.rint(curve[:, 0]).astype(int)
+        ys = np.rint(curve[:, 1]).astype(int)
+        # Ensure indices are within bounds
+        valid = (xs >= 0) & (xs < self.width) & (ys >= 0) & (ys < self.height)
+        xs, ys = xs[valid], ys[valid]
+        # Check grid cost for all points at once
+        return np.any(self.grid_cost[ys, xs] >= 2)
 
-    def try_inflate_segment(self, segment, max_offset_pixels=300, step_pixels=40):
-        """
-        Attempt to modify (inflate) the segment by replacing the middle control point(s)
-        with an offset point (based on the endpoints) to bend the curve away from obstacles.
-        Returns a new control polygon if a safe inflation is found, otherwise returns None.
-        """
+    def try_inflate_segment(self, segment, max_offset_pixels=300, tol=1.0):
         if len(segment) < 2:
             return None
 
@@ -114,15 +114,27 @@ class FastMarchingPathfinder:
         chord_length = np.linalg.norm(chord)
         if chord_length == 0:
             return None
-        # Compute a unit vector perpendicular to the chord.
+
         perp = np.array([-chord[1], chord[0]]) / chord_length
+
+        # Set initial bounds for binary search
+        lower, upper = 0, max_offset_pixels
+
+        best_candidate = None
         for sign in [1, -1]:
-            for offset in np.arange(step_pixels, max_offset_pixels + step_pixels, step_pixels):
-                mid = (p0 + p_end) / 2 + sign * perp * offset
+            while upper - lower > tol:
+                mid_offset = (lower + upper) / 2.0
+                mid = (p0 + p_end) / 2 + sign * perp * mid_offset
                 candidate_segment = [segment[0], tuple(mid), segment[-1]]
                 candidate_curve = self.bezier_curve(candidate_segment, num_points=100)
                 if not self.check_collision(candidate_curve):
-                    return candidate_segment
+                    best_candidate = candidate_segment
+                    upper = mid_offset  # try a smaller offset
+                else:
+                    lower = mid_offset  # increase offset
+            if best_candidate is not None:
+                return best_candidate
+
         return None
 
     def generate_safe_bezier_paths(self, control_points):
@@ -140,7 +152,6 @@ class FastMarchingPathfinder:
             segment.append(control_points[i])
             curve = self.bezier_curve(segment, num_points=100)
             if self.check_collision(curve):
-                print("COLLISION DETECTED INFLATING")
                 # Attempt to inflate the current segment
                 inflated_segment = self.try_inflate_segment(segment)
                 if inflated_segment is not None:
