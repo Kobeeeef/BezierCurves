@@ -5,9 +5,10 @@ import numpy as np
 import cupy as cp
 import skfmm
 import matplotlib.pyplot as plt
+import zmq
 from matplotlib.colors import LinearSegmentedColormap
 import json
-
+import BezierCurve_pb2 as BezierCurve
 
 class FastMarchingPathfinder:
     def __init__(self, grid_cost):
@@ -103,9 +104,9 @@ class FastMarchingPathfinder:
         valid = (xs >= 0) & (xs < self.width) & (ys >= 0) & (ys < self.height)
         xs, ys = xs[valid], ys[valid]
         # Check grid cost for all points at once
-        return np.any(self.grid_cost[ys, xs] >= 2)
+        return np.any(self.grid_cost[ys, xs] >= 100)
 
-    def try_inflate_segment(self, segment, max_offset_pixels=300, tol=1.0):
+    def try_inflate_segment(self, segment, max_offset_pixels=45, tol=1.0):
         if len(segment) < 2:
             return None
 
@@ -170,6 +171,42 @@ class FastMarchingPathfinder:
         return final_segments
 
 
+def deflate_inflection_points(points, distance_threshold=3.0):
+    """
+    Reduce the number of control points by averaging clusters of points that are
+    within a specified distance threshold from one another.
+
+    Args:
+        points (list or np.ndarray): List or array of (x, y) points.
+        distance_threshold (float): Maximum distance between consecutive points
+                                    to be considered in the same group.
+
+    Returns:
+        deflated_points (list): A new list of points with clusters averaged.
+    """
+    if not points:
+        return []
+
+    # Start with the first point.
+    group = [np.array(points[0], dtype=float)]
+    deflated_points = []
+
+    for pt in points[1:]:
+        pt = np.array(pt, dtype=float)
+        # Compute Euclidean distance from current point to the last point in the group.
+        if np.linalg.norm(pt - group[-1]) <= distance_threshold:
+            group.append(pt)
+        else:
+            # Average current group if it has more than one point.
+            avg_point = np.mean(group, axis=0)
+            deflated_points.append(tuple(avg_point))
+            group = [pt]
+    # Don't forget to add the last group.
+    if group:
+        avg_point = np.mean(group, axis=0)
+        deflated_points.append(tuple(avg_point))
+
+    return deflated_points
 def get_static_obstacles(filename):
     """
     Load static obstacle coordinates from a JSON file.
@@ -183,7 +220,8 @@ def get_static_obstacles(filename):
 
 def apply_and_inflate_all_obstacles(grid, static_obs_array, dynamic_obs_array, safe_distance):
     """
-    Applies both static and dynamic obstacles (with inflation) onto the grid.
+    Applies both static and dynamic obstacles (with inflation) onto the grid,
+    ensuring that inflated dynamic obstacles do not go out of bounds.
     """
     # --- Apply static obstacles ---
     for coord in static_obs_array:
@@ -202,20 +240,31 @@ def apply_and_inflate_all_obstacles(grid, static_obs_array, dynamic_obs_array, s
     for obs in dynamic_obs_array:
         cx, cy, heat, size = obs
         mask = np.zeros_like(grid, dtype=np.uint8)
+        # Determine the bounding box for the obstacle circle
         x_min = max(0, int(np.floor(cx - size)))
         x_max = min(grid.shape[1] - 1, int(np.ceil(cx + size)))
         y_min = max(0, int(np.floor(cy - size)))
         y_max = min(grid.shape[0] - 1, int(np.ceil(cy + size)))
+
+        # Mark the circular obstacle on the mask
         for x in range(x_min, x_max + 1):
             for y in range(y_min, y_max + 1):
                 if (x - cx) ** 2 + (y - cy) ** 2 <= size ** 2:
                     mask[y, x] = 1
+
+        # Inflate the dynamic obstacle
         kernel_dynamic_size = int(size) + 1
         kernel_dynamic = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_dynamic_size, kernel_dynamic_size))
         inflated_mask = cv2.dilate(mask, kernel_dynamic, iterations=1)
-        grid[inflated_mask == 1] = heat
+
+        # Only update grid cells that are within bounds
+        indices = np.argwhere(inflated_mask == 1)
+        for y, x in indices:
+            if 0 <= x < grid.shape[1] and 0 <= y < grid.shape[0]:
+                grid[y, x] = heat
 
     return grid
+
 
 
 def find_inflection_points(path):
@@ -284,7 +333,7 @@ def visualize(grid_cost, time_map, path, start, goal, bezier_segments=None, infl
             label = 'Safe Bézier Curve' if i == 0 else None
             plt.plot(curve[:, 0], curve[:, 1], 'b-', linewidth=2, label=label)
 
-    plt.title("Obstacle Heatmap with Paths")
+    plt.title("Probability Heatmap Pathplanner")
     plt.xlabel("X")
     plt.ylabel("Y")
     plt.xlim(0, grid_cost.shape[1])
@@ -293,37 +342,80 @@ def visualize(grid_cost, time_map, path, start, goal, bezier_segments=None, infl
     plt.show()
 
 
-# --- Main execution (everything is in centimeters) ---
-if __name__ == '__main__':
-    grid_width = 1755
-    grid_height = 805
-    ROBOT_SIZE_CM = 89
-    SAFE_DISTANCE_CM = 5
-    TOTAL_SAFE_DISTANCE = ROBOT_SIZE_CM + SAFE_DISTANCE_CM
+def build_bezier_curves_proto(final_segments):
+    """
+    Build a BezierCurves protobuf from the final path segments and their traversal times.
 
-    # Create the base grid (free cells = 1)
+    Args:
+        final_segments: Either a NumPy array or a list of NumPy arrays. The array can be:
+                        - 2D array of shape (N, 2) representing a single segment, or
+                        - 3D array of shape (num_segments, N, 2) for multiple segments, or
+                        - a list of 2D arrays.
+
+    Returns:
+        your_proto_pb2.BezierCurves: The populated protobuf message.
+    """
+    # Create the top-level BezierCurves message
+    bezier_curves_msg = BezierCurve.BezierCurves()
+    bezier_curves_msg.finalRotationDegrees = 0
+    bezier_curves_msg.pathFound = True
+
+    # Normalize input to be an iterable of segments.
+    if isinstance(final_segments, list):
+        segments = final_segments
+    elif isinstance(final_segments, np.ndarray):
+        if final_segments.ndim == 2:
+            segments = [final_segments]
+        else:
+            segments = final_segments
+    else:
+        raise TypeError("final_segments must be a list or a numpy array.")
+
+    # Iterate through segments
+    for segment in segments:
+        # Create a BezierCurve entry for the current segment
+        curve_msg = bezier_curves_msg.curves.add()
+        # Fill in the control points for this curve
+        for (x_val, y_val) in segment:
+            cp = curve_msg.controlPoints.add()
+            cp.x = x_val
+            cp.y = y_val
+
+    return bezier_curves_msg
+
+
+def test():
+    fieldHeightMeters = 8.05
+    fieldWidthMeters = 17.55
+    grid_width = 690
+    grid_height = 316
+    ROBOT_SIZE_INCHES = 35
+    SAFE_DISTANCE_INCHES = 3
+    TOTAL_SAFE_DISTANCE = ROBOT_SIZE_INCHES + SAFE_DISTANCE_INCHES
+    PIXELS_PER_METER_X = grid_width / fieldWidthMeters
+    PIXELS_PER_METER_Y = grid_height / fieldHeightMeters
+    # POSE 2D
+    start = (2, 6)
+    goal = (13, 0)
+
     base_grid = np.ones((grid_height, grid_width), dtype=float)
-
-    # Load static obstacles from file
-    static_obs_array = get_static_obstacles("static_obstacles_cm.json")
+    static_obs_array = get_static_obstacles("static_obstacles_inch.json")
     # Define dynamic obstacles: each tuple is (X, Y, HEAT, SIZE)
-    dynamic_obs_array = [(1100, 600, 40000, 89)]
-
-    # Apply both static and dynamic obstacles (with inflation)
-    combined_grid = apply_and_inflate_all_obstacles(base_grid.copy(), static_obs_array, dynamic_obs_array, TOTAL_SAFE_DISTANCE)
+    dynamic_obs_array = []
+    combined_grid = apply_and_inflate_all_obstacles(base_grid.copy(), static_obs_array, dynamic_obs_array,
+                                                    TOTAL_SAFE_DISTANCE)
 
     pathfinder = FastMarchingPathfinder(combined_grid)
-    start = (0, 400)
-    goal = (1650, 600)
+    START = (int(start[0] * PIXELS_PER_METER_X), int(start[1] * PIXELS_PER_METER_Y))
+    GOAL = (int(goal[0] * PIXELS_PER_METER_X), int(goal[1] * PIXELS_PER_METER_Y))
+
     print("Computing pathfinder...")
     t = time.time()
-    time_map = pathfinder.compute_time_map(goal)
-    print("Time to compute pathfinder:", time.time() - t)
+    time_map = pathfinder.compute_time_map(GOAL)
+    print("Time to compute pathfinder (ms):", (time.time() - t) * 1000)
     print("Computed time_map")
-
-    # Generate the discrete path using gradient descent on the time_map
-    path = [start]
-    current = start
+    path = [START]
+    current = START
     max_steps = 10000
     for _ in range(max_steps):
         next_cell = pathfinder.next_step(current, time_map)
@@ -334,21 +426,78 @@ if __name__ == '__main__':
         if current == goal:
             break
 
-    print(f"Path from {start} to {goal} has {len(path)} steps.")
+    print(f"Path from {START} to {GOAL} has {len(path)} steps.")
     t = time.time()
     # Extract inflection points from the discrete path
     inflection_points = find_inflection_points(path)
     print("Time to find inflection points:", time.time() - t)
     print("Inflection points count:", len(inflection_points))
-    print("Point deflation percentage:", ((len(path) - len(inflection_points)) / len(path))*100)
+    print("Point deflation percentage:", ((len(path) - len(inflection_points)) / len(path)) * 100)
 
     t = time.time()
     # Generate safe, smooth Bézier segments from the inflection points
     safe_bezier_segments = pathfinder.generate_safe_bezier_paths(inflection_points)
-    print("Time to generate safe bezier paths:", time.time() - t)
+    print("Time to generate safe bezier paths (ms):", (time.time() - t) * 1000)
 
     # Visualize everything together: obstacle heatmap, discrete path, inflection points, and safe Bézier curves.
-    visualize(combined_grid, time_map, path, start, goal,
+    visualize(combined_grid, time_map, path, START, GOAL,
               bezier_segments=safe_bezier_segments,
               inflection_points=inflection_points,
               pathfinder=pathfinder)
+def main():
+    context = zmq.Context()
+    socket = context.socket(zmq.REP)
+    bind = "tcp://127.0.0.1:8531"
+    socket.bind(bind)
+    print("Server started on " + bind)
+    fieldHeightMeters = 8.05
+    fieldWidthMeters = 17.55
+    grid_width = 690
+    grid_height = 316
+    ROBOT_SIZE_INCHES = 45
+
+    PIXELS_PER_METER_X = grid_width / fieldWidthMeters
+    PIXELS_PER_METER_Y = grid_height / fieldHeightMeters
+    # POSE 2D
+    while True:
+        message = socket.recv()
+        request = BezierCurve.PlanBezierPathRequest.FromString(message)
+        start = (request.start.x, request.start.y)
+        goal = (request.goal.x, request.goal.y)
+        SAFE_DISTANCE_INCHES = request.safeRadiusInches
+        TOTAL_SAFE_DISTANCE = ROBOT_SIZE_INCHES + SAFE_DISTANCE_INCHES
+
+        base_grid = np.ones((grid_height, grid_width), dtype=float)
+        static_obs_array = get_static_obstacles("static_obstacles_inch.json")
+        dynamic_obs_array = []
+        combined_grid = apply_and_inflate_all_obstacles(base_grid.copy(), static_obs_array, dynamic_obs_array,
+                                                        TOTAL_SAFE_DISTANCE)
+        pathfinder = FastMarchingPathfinder(combined_grid)
+        START = (int(start[0] * PIXELS_PER_METER_X), int(start[1] * PIXELS_PER_METER_Y))
+        GOAL = (int(goal[0] * PIXELS_PER_METER_X), int(goal[1] * PIXELS_PER_METER_Y))
+        time_map = pathfinder.compute_time_map(GOAL)
+        path = [START]
+        current = START
+        max_steps = 10000
+        for _ in range(max_steps):
+            next_cell = pathfinder.next_step(current, time_map)
+            if next_cell == current:
+                break  # No progress: local minimum reached.
+            path.append(next_cell)
+            current = next_cell
+            if current == goal:
+                break
+        inflection_points = find_inflection_points(path)
+        smoothed_control_points = deflate_inflection_points(inflection_points, distance_threshold=3.0)
+
+        safe_bezier_segments = pathfinder.generate_safe_bezier_paths(smoothed_control_points)
+        safe_bezier_segments_poses = [
+            segment / np.array([PIXELS_PER_METER_X, PIXELS_PER_METER_Y])
+            for segment in safe_bezier_segments
+        ]
+        response = build_bezier_curves_proto(safe_bezier_segments_poses)
+        socket.send(response.SerializeToString(), zmq.DONTWAIT)
+        print(response)
+
+if __name__ == '__main__':
+    main()

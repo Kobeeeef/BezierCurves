@@ -9,7 +9,7 @@ import os
 # Bottom-left coordinate (0,0).
 #############################################
 
-json_filename = "static_obstacles_cm.json"  # Where to save your fill coordinates
+json_filename = "static_obstacles_inch.json"  # Where to save your fill coordinates
 image_path = "2025game-field.jpg"     # Change to your path
 
 # Load original image
@@ -18,7 +18,7 @@ if img_original is None:
     raise ValueError("Could not load image! Check file path.")
 
 # -- Resize to exactly 690 x 316 ---
-target_w, target_h = 1755, 805
+target_w, target_h = 690, 316
 img_resized = cv2.resize(
     img_original,
     (target_w, target_h),

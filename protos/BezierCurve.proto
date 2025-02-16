@@ -7,20 +7,19 @@ message ControlPoint {
 }
 
 message BezierCurve {
-  double timeToTraverse = 1;
-  repeated ControlPoint controlPoints = 2;
+  repeated ControlPoint controlPoints = 1;
 }
 
 message BezierCurves {
   repeated BezierCurve curves = 1;
   bool pathFound = 2;
   optional double metersPerSecond = 3;
+  double finalRotationDegrees = 4;
+  optional double accelerationMetersPerSecond= 5;
 }
 
 message PlanBezierPathRequest {
   ControlPoint start = 1;
   ControlPoint goal = 2;
   double safeRadiusInches = 3;
-  double metersPerSecond = 4;
-
 }
