@@ -295,14 +295,14 @@ if __name__ == '__main__':
     # Load static obstacles from file
     static_obs_array = get_static_obstacles("static_obstacles_cm.json")
     # Define dynamic obstacles: each tuple is (X, Y, HEAT, SIZE)
-    dynamic_obs_array = [(800, 150, 40000, 100)]
+    dynamic_obs_array = [(800, 150, 40000, 1)]
 
     # Apply both static and dynamic obstacles (with inflation)
     combined_grid = apply_and_inflate_all_obstacles(base_grid.copy(), static_obs_array, dynamic_obs_array, TOTAL_SAFE_DISTANCE)
 
     pathfinder = FastMarchingPathfinder(combined_grid)
     start = (0, 0)
-    goal = (1600, 400)
+    goal = (1600, 700)
     print("Computing pathfinder...")
     t = time.time()
     time_map = pathfinder.compute_time_map(goal)
@@ -323,14 +323,17 @@ if __name__ == '__main__':
             break
 
     print(f"Path from {start} to {goal} has {len(path)} steps.")
-
+    t = time.time()
     # Extract inflection points from the discrete path
     inflection_points = find_inflection_points(path)
+    print("Time to find inflection points:", time.time() - t)
     print("Inflection points count:", len(inflection_points))
+    print("Point deflation percentage:", ((len(path) - len(inflection_points)) / len(path))*100)
 
+    t = time.time()
     # Generate safe, smooth Bézier segments from the inflection points
     safe_bezier_segments = pathfinder.generate_safe_bezier_paths(inflection_points)
-
+    print("Time to generate safe bezier paths:", time.time() - t)
 
     # Visualize everything together: obstacle heatmap, discrete path, inflection points, and safe Bézier curves.
     visualize(combined_grid, time_map, path, start, goal,
