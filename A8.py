@@ -2,6 +2,7 @@ import time
 
 import cv2
 import numpy as np
+import cupy as cp
 import skfmm
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
