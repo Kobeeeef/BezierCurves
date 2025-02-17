@@ -253,7 +253,7 @@ while True:
         print("Switched to Paint Mode")
     elif key == ord('q'):
         # Save filled pixels to JSON on quit.
-        with open(json_filename, 'w') as f:
+        with open("static_obstacles_inch_test.json", 'w') as f:
             json.dump([[int(v) for v in px] for px in filled_pixels], f)
         print(f"Saved {len(filled_pixels)} pixels to {json_filename}")
         break
