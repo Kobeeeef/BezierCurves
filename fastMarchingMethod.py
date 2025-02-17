@@ -496,7 +496,7 @@ def main():
             if current == goal:
                 break
         inflection_points = find_inflection_points(path)
-        smoothed_control_points = deflate_inflection_points(inflection_points, distance_threshold=2.0)
+        smoothed_control_points = deflate_inflection_points(inflection_points, distance_threshold=5.0)
 
         safe_bezier_segments = pathfinder.generate_safe_bezier_paths(smoothed_control_points)
         safe_bezier_segments_poses = [
