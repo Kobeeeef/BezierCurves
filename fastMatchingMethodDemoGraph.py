@@ -210,7 +210,7 @@ class FastMarchingPathfinder:
 # ----------------------------------------------------------------
 # Helper Functions
 # ----------------------------------------------------------------
-def deflate_inflection_points(points, distance_threshold=3.0):
+def deflate_inflection_points(points, distance_threshold=2.0):
     """
     Reduce the number of control points by averaging clusters of points that are
     within a specified distance threshold from one another.
@@ -397,7 +397,7 @@ def test():
     goal = (0, 0)
 
     base_grid = np.ones((grid_height, grid_width), dtype=float)
-    static_obs_array = get_static_obstacles("static_obstacles_inch.json")
+    static_obs_array = get_static_obstacles("static_obstacles_inch_test.json")
     # Define dynamic obstacles: each tuple is (X, Y, HEAT, SIZE)
     dynamic_obs_array = []
     combined_grid = apply_and_inflate_all_obstacles(base_grid.copy(), static_obs_array, dynamic_obs_array,
@@ -407,7 +407,7 @@ def test():
     START = (int(start[0] * PIXELS_PER_METER_X), int(start[1] * PIXELS_PER_METER_Y))
     GOAL = (int(goal[0] * PIXELS_PER_METER_X), int(goal[1] * PIXELS_PER_METER_Y))
     # For demonstration, set a non-zero goal.
-    GOAL = (600, 150)
+    GOAL = (620, 150)
     print("Computing time map...")
     t = time.time()
     time_map = pathfinder.compute_time_map(GOAL)
@@ -438,7 +438,7 @@ def test():
 
     t = time.time()
     # Generate safe, smooth Bézier segments from the inflection points.
-    smoothed_control_points = deflate_inflection_points(inflection_points, distance_threshold=2.0)
+    smoothed_control_points = deflate_inflection_points(inflection_points)
     safe_bezier_segments, inflation_histories = pathfinder.generate_safe_bezier_paths(smoothed_control_points)
     print("Time to generate safe bezier paths (ms):", (time.time() - t) * 1000)
 
