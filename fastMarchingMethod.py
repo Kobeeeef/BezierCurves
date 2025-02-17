@@ -10,6 +10,7 @@ from matplotlib.colors import LinearSegmentedColormap
 import json
 import BezierCurve_pb2 as BezierCurve
 
+
 class FastMarchingPathfinder:
     def __init__(self, grid_cost):
         """
@@ -106,7 +107,7 @@ class FastMarchingPathfinder:
         # Check grid cost for all points at once
         return np.any(self.grid_cost[ys, xs] >= 100)
 
-    def try_inflate_segment(self, segment, max_offset_pixels=45, tol=1.0):
+    def try_inflate_segment(self, segment, max_offset_pixels=35, tol=1.0):
         if len(segment) < 2:
             return None
 
@@ -119,11 +120,11 @@ class FastMarchingPathfinder:
 
         perp = np.array([-chord[1], chord[0]]) / chord_length
 
-        # Set initial bounds for binary search
-        lower, upper = 0, max_offset_pixels
-
-        best_candidate = None
+        # Try both directions, reinitializing search bounds for each.
         for sign in [1, -1]:
+            lower, upper = 0, max_offset_pixels  # Reset bounds for this sign.
+            best_candidate = None
+
             while upper - lower > tol:
                 mid_offset = (lower + upper) / 2.0
                 mid = (p0 + p_end) / 2 + sign * perp * mid_offset
@@ -131,9 +132,10 @@ class FastMarchingPathfinder:
                 candidate_curve = self.bezier_curve(candidate_segment, num_points=100)
                 if not self.check_collision(candidate_curve):
                     best_candidate = candidate_segment
-                    upper = mid_offset  # try a smaller offset
+                    upper = mid_offset  # Try a smaller offset.
                 else:
-                    lower = mid_offset  # increase offset
+                    lower = mid_offset  # Increase offset.
+
             if best_candidate is not None:
                 return best_candidate
 
@@ -207,6 +209,8 @@ def deflate_inflection_points(points, distance_threshold=3.0):
         deflated_points.append(tuple(avg_point))
 
     return deflated_points
+
+
 def get_static_obstacles(filename):
     """
     Load static obstacle coordinates from a JSON file.
@@ -266,7 +270,6 @@ def apply_and_inflate_all_obstacles(grid, static_obs_array, dynamic_obs_array, s
     return grid
 
 
-
 def find_inflection_points(path):
     """
     Extract inflection points from the path (points where the direction changes).
@@ -298,7 +301,7 @@ def visualize(grid_cost, time_map, path, start, goal, bezier_segments=None, infl
         (1.0, 1.0, 0.8),  # light yellow
         (1.0, 0.9, 0.0),  # orange
         (1.0, 0.0, 0.0),  # red
-        (0.5, 0.0, 0.5)   # purple
+        (0.5, 0.0, 0.5)  # purple
     ]
     custom_cmap = LinearSegmentedColormap.from_list("heat_custom", custom_colors, N=256)
     cmap = custom_cmap.copy()
@@ -395,8 +398,8 @@ def test():
     PIXELS_PER_METER_X = grid_width / fieldWidthMeters
     PIXELS_PER_METER_Y = grid_height / fieldHeightMeters
     # POSE 2D
-    start = (2, 6)
-    goal = (13, 0)
+    start = (0, 0)
+    goal = (0, 0)
 
     base_grid = np.ones((grid_height, grid_width), dtype=float)
     static_obs_array = get_static_obstacles("static_obstacles_inch.json")
@@ -409,6 +412,7 @@ def test():
     START = (int(start[0] * PIXELS_PER_METER_X), int(start[1] * PIXELS_PER_METER_Y))
     GOAL = (int(goal[0] * PIXELS_PER_METER_X), int(goal[1] * PIXELS_PER_METER_Y))
 
+    GOAL = (300, 200)
     print("Computing pathfinder...")
     t = time.time()
     time_map = pathfinder.compute_time_map(GOAL)
@@ -436,7 +440,9 @@ def test():
 
     t = time.time()
     # Generate safe, smooth Bézier segments from the inflection points
-    safe_bezier_segments = pathfinder.generate_safe_bezier_paths(inflection_points)
+    smoothed_control_points = deflate_inflection_points(inflection_points, distance_threshold=2.0)
+
+    safe_bezier_segments = pathfinder.generate_safe_bezier_paths(smoothed_control_points)
     print("Time to generate safe bezier paths (ms):", (time.time() - t) * 1000)
 
     # Visualize everything together: obstacle heatmap, discrete path, inflection points, and safe Bézier curves.
@@ -444,6 +450,8 @@ def test():
               bezier_segments=safe_bezier_segments,
               inflection_points=inflection_points,
               pathfinder=pathfinder)
+
+
 def main():
     context = zmq.Context()
     socket = context.socket(zmq.REP)
@@ -488,7 +496,7 @@ def main():
             if current == goal:
                 break
         inflection_points = find_inflection_points(path)
-        smoothed_control_points = deflate_inflection_points(inflection_points, distance_threshold=3.0)
+        smoothed_control_points = deflate_inflection_points(inflection_points, distance_threshold=2.0)
 
         safe_bezier_segments = pathfinder.generate_safe_bezier_paths(smoothed_control_points)
         safe_bezier_segments_poses = [
@@ -497,7 +505,7 @@ def main():
         ]
         response = build_bezier_curves_proto(safe_bezier_segments_poses)
         socket.send(response.SerializeToString(), zmq.DONTWAIT)
-        print(response)
+
 
 if __name__ == '__main__':
     main()
