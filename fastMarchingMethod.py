@@ -371,7 +371,6 @@ def main():
         pathfinder = FastMarchingPathfinder(combined_grid)
         START = (int(start[0] * PIXELS_PER_METER_X), int(start[1] * PIXELS_PER_METER_Y))
         GOAL = (int(goal[0] * PIXELS_PER_METER_X), int(goal[1] * PIXELS_PER_METER_Y))
-        print(START, GOAL)
         time_map = pathfinder.compute_time_map(GOAL)
         path = [START]
         current = START
