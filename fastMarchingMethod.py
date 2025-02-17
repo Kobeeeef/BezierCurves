@@ -350,7 +350,7 @@ def main():
     fieldWidthMeters = 17.55
     grid_width = 690
     grid_height = 316
-    ROBOT_SIZE_INCHES = 5
+    ROBOT_SIZE_INCHES = 45
 
     PIXELS_PER_METER_X = grid_width / fieldWidthMeters
     PIXELS_PER_METER_Y = grid_height / fieldHeightMeters
